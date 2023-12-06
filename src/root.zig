@@ -30,7 +30,6 @@ const Arithmetic = struct {
 //         \\ z = z + z
 //         \\ z = x
 //     );
-
 //     // z = x.add(y).
 // }
 
@@ -131,14 +130,33 @@ pub fn parse_line(comptime expression: []const u8) Expression {
     if (tokens[1] != .equals) @compileError("");
 
     parsed.result_var = tokens[0].literal;
+    parsed.assignment = parse_tree(tokens[2..]);
+
+    return parsed;
 }
 
 pub fn parse_tree(comptime tokens: []const Token) *const Operation {
-    _ = tokens;
+    const shunted = comptime shunting_yard(tokens);
 
-    var operation: Operation = undefined;
+    var stack: [MAX_TOKENS]*const Operation = undefined;
+    var stack_size: usize = 0;
 
-    return &operation;
+    for (shunted) |token| switch (token) {
+        .literal => |lit| {
+            const single: Operation = .{ .singleton = lit };
+            stack[stack_size] = &single;
+            stack_size += 1;
+        },
+        .plus => {
+            if (stack_size < 2) @panic("");
+            const addition: Operation = .{ .add = .{ .lhs = stack[stack_size] } };
+            _ = addition;
+        },
+    };
+
+    //
+
+    return stack[0];
 }
 
 fn Precedence(comptime tag: std.meta.Tag(Token)) u8 {
@@ -189,7 +207,7 @@ fn shunting_yard(comptime tokens: []const Token) []const Token {
             const o1 = Precedence(token);
             while (operator_size > 0) {
                 const o2 = Precedence(operator_stack[operator_size - 1]);
-                if (o2 > o1) {
+                if (o2 >= o1) {
                     // Remove it and push it.
                     result[result_size] = operator_stack[operator_size - 1];
                     result_size += 1;
@@ -230,10 +248,10 @@ fn print_token(tokens: []const Token) void {
     };
 }
 
-test "shunting" {
-    const tokens = comptime tokenize("a + b * e + c * d");
-    //std.debug.print("{any}\n", .{tokens});
-    const shunted = comptime shunting_yard(tokens);
-    //_ = shunted;
-    print_token(shunted);
-}
+// test "shunting" {
+//     const tokens = comptime tokenize("a + b + c + d");
+//     //std.debug.print("{any}\n", .{tokens});
+//     const shunted = comptime shunting_yard(tokens);
+//     //_ = shunted;
+//     print_token(shunted);
+// }
