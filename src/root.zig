@@ -36,13 +36,13 @@ const Arithmetic = struct {
 
 const Expression = struct {
     result_var: []const u8,
-    assignment: Operation,
+    assignment: *const Operation,
 };
 
 const Operation = union(enum) {
     const BinOp = struct {
-        lhs: *Operation,
-        rhs: *Operation,
+        lhs: *const Operation,
+        rhs: *const Operation,
     };
 
     singleton: []const u8,
@@ -64,6 +64,8 @@ const Token = union(enum) {
     equals,
     plus,
     times,
+    lparen,
+    rparen,
 };
 
 const MAX_TOKENS = 1000;
@@ -113,14 +115,125 @@ pub fn tokenize(comptime expression: []const u8) []const Token {
     return tokens[0..token_count];
 }
 
-test "tokenize" {
-    const tokens = comptime tokenize("z_a= z + 1 * 2 * adwa");
-    std.debug.print("{any}", .{tokens});
-}
+// test "tokenize" {
+//     const tokens = comptime tokenize("z_a= z + 1 * 2 * adwa");
+//     std.debug.print("{any}", .{tokens});
+// }
 
 pub fn parse_line(comptime expression: []const u8) Expression {
     // x = z + y
     // [Literal X] [EqualsSymbol] [Literal Z] [Plus Sign] [Literal Y]
-    const tokens = tokenize(expression);
+    const tokens = comptime tokenize(expression);
+
+    var parsed: Expression = undefined;
+    if (tokens.len < 3) @compileError("invalid expression: " ++ expression);
+    if (tokens[0] != .literal) @compileError("");
+    if (tokens[1] != .equals) @compileError("");
+
+    parsed.result_var = tokens[0].literal;
+}
+
+pub fn parse_tree(comptime tokens: []const Token) *const Operation {
     _ = tokens;
+
+    var operation: Operation = undefined;
+
+    return &operation;
+}
+
+fn Precedence(comptime tag: std.meta.Tag(Token)) u8 {
+    return switch (tag) {
+        .plus => 0,
+        .times => 1,
+        .lparen => 127,
+        else => @compileError(""),
+    };
+}
+
+// From:
+// https://en.wikipedia.org/wiki/Shunting_yard_algorithm
+
+fn shunting_yard(comptime tokens: []const Token) []const Token {
+    var result: [MAX_TOKENS]Token = undefined; // Outputs
+    var result_size: usize = 0;
+
+    var operator_stack: [MAX_TOKENS]Token = undefined;
+    var operator_size: usize = 0;
+
+    for (tokens) |token| switch (token) {
+        .literal => {
+            result[result_size] = token;
+            result_size += 1;
+        },
+        .lparen => {
+            operator_stack[operator_size] = token;
+            operator_size += 1;
+        },
+        .rparen => {
+            while (true) {
+                if (operator_size == 0) @panic("bad");
+                switch (operator_stack[operator_size - 1]) {
+                    .lparen => {
+                        operator_size -= 1;
+                        break;
+                    },
+                    else => {
+                        result[result_size] = operator_stack[operator_size - 1];
+                        result_size += 1;
+                        operator_size -= 1;
+                    },
+                }
+            }
+        },
+        .plus, .times => {
+            const o1 = Precedence(token);
+            while (operator_size > 0) {
+                const o2 = Precedence(operator_stack[operator_size - 1]);
+                if (o2 > o1) {
+                    // Remove it and push it.
+                    result[result_size] = operator_stack[operator_size - 1];
+                    result_size += 1;
+                    operator_size -= 1;
+                } else {
+                    break;
+                }
+            }
+            operator_stack[operator_size] = token;
+            operator_size += 1;
+        },
+        else => @panic("bad token"),
+    };
+
+    while (operator_size > 0) : (operator_size -= 1) {
+        switch (operator_stack[operator_size - 1]) {
+            .lparen => @panic(""),
+            .plus, .times => {
+                result[result_size] = operator_stack[operator_size - 1];
+                result_size += 1;
+            },
+            else => @panic(""),
+        }
+    }
+
+    return result[0..result_size];
+}
+
+fn print_token(tokens: []const Token) void {
+    for (tokens) |token| switch (token) {
+        .literal => |c| {
+            std.debug.print("{s} ", .{c});
+        },
+        .plus => std.debug.print("+ ", .{}),
+        .times => std.debug.print("* ", .{}),
+        .equals => std.debug.print("= ", .{}),
+        else => @panic(""),
+    };
+}
+
+test "shunting" {
+    const tokens = comptime tokenize("a + b * e + c * d");
+    //std.debug.print("{any}\n", .{tokens});
+    const shunted = comptime shunting_yard(tokens);
+    //_ = shunted;
+    print_token(shunted);
 }
